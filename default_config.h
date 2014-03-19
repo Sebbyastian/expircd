@@ -13,4 +13,6 @@
 #define HOSTLEN 256
 #define TOPICLEN 384
 
+#define CASEMAPPING rfc1459
+
 #endif

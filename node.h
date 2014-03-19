@@ -3,10 +3,16 @@
 
 #include "sock.h"
 
+struct casemap;
 struct node;
 struct nodeinfo;
 
 typedef int evaluator(struct node *, struct nodeinfo **);
+
+typedef struct casemap {
+    char *description;
+    int (*tolower)(int);
+} casemap;
 
 typedef struct evaluatorinfo {
     char *name;
@@ -61,6 +67,10 @@ typedef struct nodeinfo {
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+
+int ascii_tolower(int);
+int strict_rfc1459_tolower(int);
+int rfc1459_tolower(int);
 
 size_t node_bit(void *, size_t, size_t);
 int node_cleanup(node *, nodeinfo **);

@@ -1,6 +1,7 @@
 #include "node.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <limits.h>
 #include <stdarg.h>
 #include <stdint.h>
@@ -9,6 +10,28 @@
 
 #define debug(statement) (printf("%s:%u entered\n", __FILE__, (unsigned int) __LINE__), statement); printf("%s:%u exited\n", __FILE__, (unsigned int) __LINE__)
 
+casemap ascii = { "ascii", ascii_tolower };
+casemap strict_rfc1459 = { "strict-rfc1459", strict_rfc1459_tolower };
+casemap rfc1459 = { "rfc1459", rfc1459_tolower };
+
+/* XXX: These need to be changed because IRC guarantees ASCII, where-as C makes no such guarantee.
+ *      Reference: http://www.irc.org/tech_docs/005.html */
+
+int ascii_tolower(int c) {
+    return tolower(c);
+}
+
+int strict_rfc1459_tolower(int c) {
+    const char *punc = "[]\\";
+    return strchr(punc, c) ? "{}|"[strchr(punc, c) - punc] : ascii_tolower(c);
+}
+
+int rfc1459_tolower(int c) {
+    return c == '^' ? '~' : strict_rfc1459_tolower(c);
+}
+
+/* END XXX */
+
 int channel(nodeinfo **list, node *c) {
     return 0;
 }
@@ -16,7 +39,7 @@ int channel(nodeinfo **list, node *c) {
 size_t node_bit(void *u, size_t offset, size_t size) {
     unsigned char *u_nickname = u;
     size_t hi = offset / CHAR_BIT;
-    return hi < size && (u_nickname[hi] >> (~offset % CHAR_BIT)) % 2;
+    return hi < size && (CASEMAPPING.tolower(u_nickname[hi]) >> (~offset % CHAR_BIT)) % 2;
 }
 
 int node_cleanup(node *u, nodeinfo **list) {
@@ -29,7 +52,7 @@ size_t node_compare(void *x, void *y, size_t offset, size_t size) {
                   *y_nickname = y;
     size_t hi = offset / CHAR_BIT;
 
-    while (hi < size && x_nickname[hi] == y_nickname[hi]) {
+    while (hi < size && CASEMAPPING.tolower(x_nickname[hi]) == CASEMAPPING.tolower(y_nickname[hi])) {
         hi++;
     }
 
@@ -37,7 +60,7 @@ size_t node_compare(void *x, void *y, size_t offset, size_t size) {
               ? ~0U % CHAR_BIT
               : ~offset % CHAR_BIT,
            sum = hi < size
-               ? x_nickname[hi] ^ y_nickname[hi]
+               ? CASEMAPPING.tolower(x_nickname[hi]) ^ CASEMAPPING.tolower(y_nickname[hi])
                : ~0U % UCHAR_MAX;
 
     while (lo > 0 && sum >> lo == 0) {
