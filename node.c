@@ -377,7 +377,7 @@ int user_participation_not_enough_parameters(node *u, nodeinfo **list) {
     return user_participation_error(u, list, ":%s 461 %.*s %.*s :Not enough parameters\r\n");
 }
 
-int user_participation_notice(node *u, nodeinfo **list) {
+int user_participation_message(node *u, nodeinfo **list, evaluator *e) {
     int n = user_recv(u);
     if (n <= 0) {
         return n;
@@ -395,37 +395,23 @@ int user_participation_notice(node *u, nodeinfo **list) {
     }
 
     u->target.node = t;
-    u->evaluate = user_participation_notice_relay_header;
+    u->evaluate = e;
     return u->evaluate(u, list);
 }
 
-int user_participation_notice_relay_header(node *u, nodeinfo **list) {
+int user_participation_notice(node *u, nodeinfo **list) {
+    return debug(user_participation_message(u, list, user_participation_notice_handler));
+}
+
+int user_participation_notice_handler(node *u, nodeinfo **list) {
     return user_participation_relay_header(u, list, "NOTICE");
 }
 
 int user_participation_privmsg(node *u, nodeinfo **list) {
-    int n = user_recv(u);
-    if (n <= 0) {
-        return n;
-    }
-
-    node *t = nodeinfo_get(list, u->recvdata, u->recvdata_mark);
-    if (t == NULL) {
-        u->evaluate = user_participation_no_such_entity;
-        return u->evaluate(u, list);
-    }
-
-    if (user_discard(u) != ' ') {
-        u->evaluate = user_participation;
-        return 1;
-    }
-
-    u->target.node = t;
-    u->evaluate = user_participation_privmsg_relay_header;
-    return u->evaluate(u, list);
+    return user_participation_message(u, list, user_participation_privmsg_handler);
 }
 
-int user_participation_privmsg_relay_header(node *u, nodeinfo **list) {
+int user_participation_privmsg_handler(node *u, nodeinfo **list) {
     return user_participation_relay_header(u, list, "PRIVMSG");
 }
 
@@ -436,7 +422,7 @@ int user_participation_relay_header(node *u, nodeinfo **list, char *action) {
     }
 
     t->source.node = u;
-    int n = user_sendf(t, ":%.*s!%.*s@%.*s %s %.*s :", NICKLEN, u->nickname, action, USERLEN, u->username, HOSTLEN, u->hostname, NICKLEN, t->nickname);
+    int n = debug(user_sendf(t, ":%.*s!%.*s@%.*s %s %.*s :", NICKLEN, u->nickname, USERLEN, u->username, HOSTLEN, u->hostname, action, NICKLEN, t->nickname));
     if (n <= 0) {
         return 1;
     }
