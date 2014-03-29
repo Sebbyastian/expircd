@@ -33,7 +33,11 @@ int rfc1459_tolower(int c) {
 
 /* END XXX */
 
-int channel(nodeinfo **list, node *c) {
+int channel_info(node *c, nodeinfo **list) {
+    return 0;
+}
+
+int channel_user(node *c, nodeinfo **list) {
     return 0;
 }
 
@@ -73,26 +77,56 @@ size_t node_compare(void *x, void *y, size_t offset, size_t size) {
 
 node *nodeinfo_add(nodeinfo **list, node *u) {
     size_t old_size = *list ? (*list)->size : 0, new_size = old_size + 1;
-    int tree_formed = old_size && (*list)->root.node;
     assert(new_size > old_size);
 
     if ((old_size & new_size) == 0) {
+        int tree_formed = old_size && (*list)->root.node;
+        node *l = tree_formed ? (*list)->node : NULL;
+
         if (SIZE_MAX / 2 / sizeof *u <= new_size) { return NULL; }
 
-       if (tree_formed) {
+        if (tree_formed) {
             (*list)->root.offset = (*list)->root.node - (*list)->node;
             for (size_t x = 0; x < old_size; x++) {
-                size_t source = (*list)->node[x].source.node ? (*list)->node[x].source.node - (*list)->node : 0;
-                size_t target = (*list)->node[x].target.node ? (*list)->node[x].target.node - (*list)->node : 0;
+                node *n = l + x;
 
-                (*list)->node[x].source.offset = source;
-                (*list)->node[x].target.offset = target;
+                size_t next[2] = { n->next.node[0] ? n->next.node[0] - l : 0,
+                                   n->next.node[1] ? n->next.node[1] - l : 0 };
+                n->next.offset[0] = next[0];
+                n->next.offset[1] = next[1];
 
-                size_t next[2] = { (*list)->node[x].next.node[0] - (*list)->node,
-                                   (*list)->node[x].next.node[1] - (*list)->node };
+                if (n->evaluate == channel_user) {
+                    n->next_user.offset = n->next_user.node ? n->next_user.node - l : 0;
 
-                (*list)->node[x].next.offset[0] = next[0];
-                (*list)->node[x].next.offset[1] = next[1];
+                    for (size_t x = 0; x < (sizeof *n - offsetof(node, user)) / sizeof *(n->user); x++) {
+                        n->user[x].offset = n->user[x].node ? n->user[x].node - l : 0;
+                    }
+
+                    continue;
+                }
+
+                if (n->evaluate == user_channel) {
+                    n->next_channel.offset = n->next_channel.node ? n->next_channel.node - l : 0;
+
+                    for (size_t x = 0; x < (sizeof *n - offsetof(node, channel)) / sizeof *(n->channel); x++) {
+                        n->channel[x].offset = n->channel[x].node ? n->channel[x].node - l : 0;
+                    }
+
+                    continue;
+                }
+
+                size_t source = n->source.node ? n->source.node - l : 0;
+                size_t target = n->target.node ? n->target.node - l : 0;
+
+                n->source.offset = source;
+                n->target.offset = target;
+
+                if (n->evaluate == channel_info) {
+                    n->first_user.offset = n->first_user.node ? n->first_user.node - l : 0;
+                    continue;
+                }
+
+                n->first_channel.offset = n->first_channel.node ? n->first_channel.node - l : 0;
             }
         }
 
@@ -103,24 +137,53 @@ node *nodeinfo_add(nodeinfo **list, node *u) {
         if (temp == NULL) { return NULL; }
 
         *list = temp;
-        if (tree_formed) {
+        if (!tree_formed) {
             (*list)->root.node = NULL;
         }
         else {
+            l = (*list)->node;
             (*list)->root.node = (*list)->node + (*list)->root.offset;
             for (size_t x = 0; x < old_size; x++) {
-                 node *source = (*list)->node[x].source.offset ? (*list)->node + (*list)->node[x].source.offset : NULL;
-                 node *target = (*list)->node[x].target.offset ? (*list)->node + (*list)->node[x].target.offset : NULL;
+                node *n = l + x;
 
-                 (*list)->node[x].source.node = source;
-                 (*list)->node[x].target.node = target;
+                node *next[2] = { n->next.offset[0] ? l + n->next.offset[0] : NULL,
+                                  n->next.offset[1] ? l + n->next.offset[1] : NULL };
+                n->next.node[0] = next[0];
+                n->next.node[1] = next[1];
 
-                 node *next[2] = { (*list)->node + (*list)->node[x].next.offset[0],
-                                   (*list)->node + (*list)->node[x].next.offset[1] };
+                if (n->evaluate == channel_user) {
+                    n->next_user.node = n->next_user.offset ? l + n->next_user.offset : NULL;
 
-                 (*list)->node[x].next.node[0] = next[0];
-                 (*list)->node[x].next.node[1] = next[1];
-             }
+                    for (size_t x = 0; x < (sizeof *n - offsetof(node, user)) / sizeof *(n->user); x++) {
+                        n->user[x].node = n->user[x].offset ? l + n->user[x].offset : NULL;
+                    }
+
+                    continue;
+                }
+
+                if (n->evaluate == user_channel) {
+                    n->next_channel.node = n->next_channel.offset ? l + n->next_channel.offset : NULL;
+
+                    for (size_t x = 0; x < (sizeof *n - offsetof(node, channel)) / sizeof *(n->channel); x++) {
+                        n->channel[x].node = n->channel[x].offset ? l + n->channel[x].offset : NULL;
+                    }
+
+                    continue;
+                }
+
+                node *source = n->source.offset ? l + n->source.offset : NULL;
+                node *target = n->target.offset ? l + n->target.offset : NULL;
+
+                n->source.node = source;
+                n->target.node = target;
+
+                if (n->evaluate == channel_info) {
+                    n->first_user.node = n->first_user.offset ? l + n->first_user.offset : NULL;
+                    continue;
+                }
+
+                n->first_channel.node = n->first_channel.offset ? l + n->first_channel.offset : NULL;
+            }
         }
     }
 
@@ -193,6 +256,10 @@ int server_accept(node *u, nodeinfo **list) {
     return 0;
 }
 
+int user_channel(node *u, nodeinfo **list) {
+    return 0;
+}
+
 int user_discard(node *u) {
     u->recvdata_past = u->recvdata[u->recvdata_mark++];
     u->recvdata_size -= u->recvdata_mark;
@@ -210,7 +277,7 @@ int user_discard_line(node *u) {
 }
 
 int user_error(node *u, nodeinfo **list, evaluator *e, char *format) {
-    int n = user_sendf(u, format, HOSTNAME, NICKLEN, u->nickname[0] == '\0' ? "*" : u->nickname, u->recvdata_mark, u->recvdata);
+    int n = sendf(u, format, HOSTNAME, NICKLEN, u->nickname[0] == '\0' ? "*" : u->nickname, u->recvdata_mark, u->recvdata);
     if (n <= 0) {
         return n;
     }
@@ -335,7 +402,7 @@ int user_participation_nickname(node *u, nodeinfo **list) {
 
 int user_participation_nickname_success(node *u, nodeinfo **list) {
     size_t nickname_size = u->recvdata_mark < NICKLEN ? u->recvdata_mark : NICKLEN;
-    int n = user_sendf(u, ":%.*s NICK :%.*s\r\n", NICKLEN, u->nickname, nickname_size, u->recvdata);
+    int n = sendf(u, ":%.*s NICK :%.*s\r\n", NICKLEN, u->nickname, nickname_size, u->recvdata);
     if (n <= 0) {
         return n;
     }
@@ -422,7 +489,8 @@ int user_participation_relay_header(node *u, nodeinfo **list, char *action) {
     }
 
     t->source.node = u;
-    int n = debug(user_sendf(t, ":%.*s!%.*s@%.*s %s %.*s :", NICKLEN, u->nickname, USERLEN, u->username, HOSTLEN, u->hostname, action, NICKLEN, t->nickname));
+
+    int n = sendf(t, ":%.*s!%.*s@%.*s %s %.*s :", NICKLEN, u->nickname, USERLEN, u->username, HOSTLEN, u->hostname, action, NICKLEN, t->nickname);
     if (n <= 0) {
         return 1;
     }
@@ -439,6 +507,7 @@ int user_participation_relay_message(node *u, nodeinfo **list) {
 
     node *t = u->target.node;
     t->source.node = u;
+
     n = user_send(t, u->recvdata, u->recvdata_size);
     if (n <= 0) {
         return 1;
@@ -459,10 +528,10 @@ int user_participation_username(node *u, nodeinfo **list) {
 }
 
 int user_participation_welcome(node *u, nodeinfo **list) {
-    int n = user_sendf(u, ":%s 001 %.*s :Welcome to the Internet Relay Network %.*s!%.*s@%.*s\r\n", HOSTNAME, NICKLEN, u->nickname,
-                                                                                                              NICKLEN, u->nickname,
-                                                                                                              USERLEN, u->username,
-                                                                                                              HOSTLEN, u->hostname);
+    int n = sendf(u, ":%s 001 %.*s :Welcome to the Internet Relay Network %.*s!%.*s@%.*s\r\n", HOSTNAME, NICKLEN, u->nickname,
+                                                                                                         NICKLEN, u->nickname,
+                                                                                                         USERLEN, u->username,
+                                                                                                         HOSTLEN, u->hostname);
     if (n <= 0) {
         return n;
     }
@@ -554,11 +623,44 @@ int user_registration_username(node *u, nodeinfo **list) {
     memset(u->username + username_size, 0, USERLEN - username_size);
 
     struct sockaddr name;
-    assert(!sock_invalid(getpeername(u->fd, &name, (socklen_t[]) { sizeof name })));
-    assert(getnameinfo(&name, sizeof name, u->hostname, HOSTLEN, NULL, 0, NI_NUMERICHOST) == 0);
+
+    n = sock_invalid(getpeername(u->fd, &name, (socklen_t[]) { sizeof name }));
+    assert(n == 0);
+
+    n = getnameinfo(&name, sizeof name, u->hostname, HOSTLEN, NULL, 0, NI_NUMERICHOST);
+    assert(n == 0);
 
     u->evaluate = user_registration_discard_line;
     return u->evaluate(u, list);
+}
+
+int channel_send(node *c, char *data, size_t size) {
+    for (node *target = c->target.node ? c->target.node : c->first_user.node; target != NULL; target = target->next_user.node) {
+        while (target->target.offset < (sizeof *target - offsetof(node, user)) / sizeof *(target->user)) {
+            node *u = target->user[target->target.offset].node;
+            if (!u) {
+                target->target.offset++;
+                continue;
+            }
+
+            if (u->source.node && u->source.node != target) {
+                c->target.node = target;
+                return 0;
+            }
+
+            u->source.node = target;
+
+            int n = user_send(u, data, size);
+            if (n < 0) {
+                c->target.node = target;
+                return n;
+            }
+            target->target.offset++;
+        }
+        target->target.offset = 0;
+    }
+    c->target.node = NULL;
+    return 1;
 }
 
 int user_send(node *u, char *data, size_t size) {
@@ -569,7 +671,7 @@ int user_send(node *u, char *data, size_t size) {
 
     int n = send(u->fd, data + u->senddata_size, size - u->senddata_size <= INT_MAX ? size - u->senddata_size : INT_MAX, 0);
     if (n < 0) {
-        switch (sock_again(fd)) {
+        switch (sock_again(n)) {
             case 0: return n;
             case 1: n = 0;
                     break;
@@ -585,7 +687,7 @@ int user_send(node *u, char *data, size_t size) {
     return 1;
 }
 
-int user_sendf(node *u, char *format, ...) {
+int sendf(node *n, char *format, ...) {
     va_list list, copy;
     va_start(list, format);
     va_copy(copy, list);
@@ -595,5 +697,6 @@ int user_sendf(node *u, char *format, ...) {
 
     va_end(list);
     va_end(copy);
-    return user_send(u, data, sizeof data - 1);
+    return n->evaluate == channel_info ? channel_send(n, data, sizeof data - 1)
+                                       : user_send(n, data, sizeof data - 1);
 }

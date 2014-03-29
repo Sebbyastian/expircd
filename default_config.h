@@ -11,7 +11,10 @@
 #define NICKLEN 32
 #define USERLEN 32
 #define HOSTLEN 256
+
 #define TOPICLEN 384
+#define KEYLEN 32
+
 
 #define CASEMAPPING rfc1459
 

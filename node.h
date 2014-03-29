@@ -39,17 +39,62 @@ typedef struct node {
         struct node *node[2];
     } next;
 
-    sockfd fd;
+    union {
+        struct { /* only valid when evaluate is set to user_* functions (except for user_channel) */
+            sockfd fd;
 
-    size_t recvdata_mark;
-    size_t recvdata_size;
-    size_t senddata_size;
+            union {
+                size_t offset;
+                struct node *node;
+            } first_channel;
 
-    int recvdata_past;
+            size_t recvdata_mark;
+            size_t recvdata_size;
+            int    recvdata_past;
+            size_t senddata_size;
 
-    char recvdata[512];
-    char username[USERLEN];
-    char hostname[HOSTLEN];
+            char recvdata[512];
+            char username[USERLEN];
+            char hostname[HOSTLEN];
+        };
+
+        struct { /* only valid when evaluate is set to channel_info */
+            char topic[TOPICLEN];
+            char key[KEYLEN];
+            size_t limit;
+            union {
+               size_t offset;
+               struct node *node;
+            } first_user;
+            unsigned int invite_only   :1,
+                         moderate      :1,
+                         private       :1,
+                         secret        :1,
+                         topic_restrict:1;
+        };
+
+        struct { /* only valid when evaluate is set to channel_user */
+            union {
+               size_t offset;
+               struct node *node;
+            } next_user;
+            union {
+               size_t offset;
+               struct node *node;
+            } user[];
+        };
+
+        struct { /* only valid when evaluate is set to user_channel */
+            union {
+               size_t offset;
+               struct node *node;
+            } next_channel;
+            union {
+               size_t offset;
+               struct node *node;
+            } channel[];
+        };
+    };
 } node;
 
 typedef struct nodeinfo {
@@ -72,6 +117,9 @@ int ascii_tolower(int);
 int strict_rfc1459_tolower(int);
 int rfc1459_tolower(int);
 
+int channel_info(node *, nodeinfo **);
+int channel_user(node *, nodeinfo **);
+
 size_t node_bit(void *, size_t, size_t);
 int node_cleanup(node *, nodeinfo **);
 size_t node_compare(void *, void *, size_t, size_t);
@@ -85,6 +133,7 @@ int evaluatorinfo_compare(const void *, const void *);
 
 int server_accept(node *, nodeinfo **);
 
+int user_channel(node *, nodeinfo **);
 int user_discard(node *);
 int user_discard_line(node *);
 int user_error(node *, nodeinfo **, evaluator *, char *);
@@ -121,5 +170,5 @@ int user_participation_privmsg(node *, nodeinfo **);
 int user_registration_unknown_command(node *, nodeinfo **);
 int user_registration_username(node *, nodeinfo **);
 int user_send(node *, char *, size_t);
-int user_sendf(node *, char *, ...);
+int sendf(node *, char *, ...);
 #endif
