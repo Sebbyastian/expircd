@@ -8,7 +8,7 @@
 #ifdef WIN32
 #    define errno            WSAGetLastError()
 #    include <winsock2.h>
-#    include <Ws2tcpip.h>
+#    include <ws2tcpip.h>
 #    define accept(fd)       (accept(fd, NULL, NULL))
 #    define sock_again(fd)   (WSAGetLastError() == WSAEWOULDBLOCK)
 #    define sock_invalid(fd) (fd == INVALID_SOCKET)

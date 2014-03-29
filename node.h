@@ -79,6 +79,7 @@ size_t node_compare(void *, void *, size_t, size_t);
 node *nodeinfo_add(nodeinfo **, node *);
 void nodeinfo_bind(nodeinfo **, addrinfo *, evaluator *);
 node *nodeinfo_get(nodeinfo **, void *, size_t);
+node **nodeinfo_getref(nodeinfo **, void *, size_t);
 
 int evaluatorinfo_compare(const void *, const void *);
 
@@ -100,10 +101,10 @@ int user_participation_no_such_entity(node *, nodeinfo **);
 int user_participation_not_enough_parameters(node *, nodeinfo **);
 int user_participation_notice(node *, nodeinfo **);
 int user_participation_notice_relay_header(node *, nodeinfo **);
-int user_participation_notice_relay_message(node *, nodeinfo **);
 int user_participation_privmsg(node *, nodeinfo **);
 int user_participation_privmsg_relay_header(node *, nodeinfo **);
-int user_participation_privmsg_relay_message(node *, nodeinfo **);
+int user_participation_relay_header(node *, nodeinfo **, char *);
+int user_participation_relay_message(node *, nodeinfo **);
 int user_participation_unknown_command(node *, nodeinfo **);
 int user_participation_username(node *, nodeinfo **);
 int user_participation_welcome(node *, nodeinfo **);

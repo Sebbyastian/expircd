@@ -4,6 +4,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -102,24 +103,24 @@ node *nodeinfo_add(nodeinfo **list, node *u) {
         if (temp == NULL) { return NULL; }
 
         *list = temp;
-        switch (tree_formed) {
-            case 0: (*list)->root.node = NULL;
-                    break;
-            case 1: (*list)->root.node = (*list)->node + (*list)->root.offset;
-                    for (size_t x = 0; x < old_size; x++) {
-                        node *source = (*list)->node[x].source.offset ? (*list)->node + (*list)->node[x].source.offset : NULL;
-                        node *target = (*list)->node[x].target.offset ? (*list)->node + (*list)->node[x].target.offset : NULL;
+        if (tree_formed) {
+            (*list)->root.node = NULL;
+        }
+        else {
+            (*list)->root.node = (*list)->node + (*list)->root.offset;
+            for (size_t x = 0; x < old_size; x++) {
+                 node *source = (*list)->node[x].source.offset ? (*list)->node + (*list)->node[x].source.offset : NULL;
+                 node *target = (*list)->node[x].target.offset ? (*list)->node + (*list)->node[x].target.offset : NULL;
 
-                        (*list)->node[x].source.node = source;
-                        (*list)->node[x].target.node = target;
+                 (*list)->node[x].source.node = source;
+                 (*list)->node[x].target.node = target;
 
-                        node *next[2] = { (*list)->node + (*list)->node[x].next.offset[0],
-                                          (*list)->node + (*list)->node[x].next.offset[1] };
+                 node *next[2] = { (*list)->node + (*list)->node[x].next.offset[0],
+                                   (*list)->node + (*list)->node[x].next.offset[1] };
 
-                        (*list)->node[x].next.node[0] = next[0];
-                        (*list)->node[x].next.node[1] = next[1];
-                    }
-                    break;
+                 (*list)->node[x].next.node[0] = next[0];
+                 (*list)->node[x].next.node[1] = next[1];
+             }
         }
     }
 
@@ -151,19 +152,25 @@ void nodeinfo_bind(nodeinfo **list, addrinfo *addr, evaluator *e) {
 }
 
 node *nodeinfo_get(nodeinfo **list, void *u, size_t size) {
-    size_t offset;
-    node *n = (*list)->root.node;
+    node *n = *nodeinfo_getref(list, u, size);
 
-    if (n == NULL) {
+    return n != NULL && node_compare(n, u, 0, size) / CHAR_BIT == size ? n : NULL;
+}
+
+node **nodeinfo_getref(nodeinfo **list, void *u, size_t size) {
+    size_t offset;
+    node **n = &(*list)->root.node;
+
+    if (*n == NULL) {
         return n;
     }
 
     do {
-        offset = n->offset;
-        n = n->next.node[node_bit(u, offset, size)];
-    } while (offset < n->offset);
+        offset = (*n)->offset;
+        n = (*n)->next.node + node_bit(u, offset, size);
+    } while (offset < (*n)->offset);
 
-    return node_compare(n, u, 0, size) / CHAR_BIT == size ? n : NULL;
+    return n;
 }
 
 int evaluatorinfo_compare(const void *x, const void *y) {
@@ -203,7 +210,7 @@ int user_discard_line(node *u) {
 }
 
 int user_error(node *u, nodeinfo **list, evaluator *e, char *format) {
-    int n = user_sendf(u, format, HOSTNAME, sizeof u->nickname, u->nickname[0] == '\0' ? "*" : u->nickname, u->recvdata_mark, u->recvdata);
+    int n = user_sendf(u, format, HOSTNAME, NICKLEN, u->nickname[0] == '\0' ? "*" : u->nickname, u->recvdata_mark, u->recvdata);
     if (n <= 0) {
         return n;
     }
@@ -243,10 +250,11 @@ int user_nickname(node *u, nodeinfo **list, evaluator *nickname_success, evaluat
         return n;
     }
 
-    u->evaluate = nodeinfo_get(list, u->recvdata, u->recvdata_mark)
+    node *v = nodeinfo_get(list, u->recvdata, u->recvdata_mark);
+    u->evaluate = v && v != u
                 ? nickname_in_use
                 : nickname_success;
-    return debug(u->evaluate(u, list));
+    return u->evaluate(u, list);
 }
 
 int user_nickname_success(node *u, nodeinfo **list, evaluator *e) {
@@ -328,9 +336,33 @@ int user_participation_nickname(node *u, nodeinfo **list) {
 int user_participation_nickname_success(node *u, nodeinfo **list) {
     size_t nickname_size = u->recvdata_mark < NICKLEN ? u->recvdata_mark : NICKLEN;
     int n = user_sendf(u, ":%.*s NICK :%.*s\r\n", NICKLEN, u->nickname, nickname_size, u->recvdata);
-    return n <= 0
-         ? n
-         : user_nickname_success(u, list, user_participation_discard_line);
+    if (n <= 0) {
+        return n;
+    }
+
+    size_t x;
+    while (x < nickname_size && CASEMAPPING.tolower(u->nickname[x]) != CASEMAPPING.tolower(u->recvdata[x])) {
+        x++;
+    }
+
+    if (x == nickname_size) {
+        memmove(u->nickname, u->recvdata, nickname_size);
+        memset(u->nickname + nickname_size, 0, NICKLEN - nickname_size);
+        u->evaluate = user_participation_discard_line;
+        return u->evaluate(u, list);
+    }
+
+    node **v = nodeinfo_getref(list, u->nickname, NICKLEN);
+    do {
+        *v = (*v)->next.node[0];
+    } while ((*v)->next.node[0] != u);
+
+    node *w = (*v)->next.node[1];
+    (*v)->next.node[0] = u->next.node[0];
+    (*v)->next.node[1] = u->next.node[1];
+    *v = w;
+
+    return user_nickname_success(u, list, user_participation_discard_line);
 }
 
 int user_participation_nickname_in_use(node *u, nodeinfo **list) {
@@ -368,38 +400,7 @@ int user_participation_notice(node *u, nodeinfo **list) {
 }
 
 int user_participation_notice_relay_header(node *u, nodeinfo **list) {
-    node *t = u->target.node;
-    if (t->source.node && t->source.node != u) {
-        return 1;
-    }
-
-    t->source.node = u;
-    int n = user_sendf(t, ":%.*s NOTICE %.*s :", NICKLEN, u->nickname, NICKLEN, t->nickname);
-    if (n <= 0) {
-        return 1;
-    }
-
-    u->evaluate = user_participation_notice_relay_message;
-    return u->evaluate(u, list);
-}
-
-int user_participation_notice_relay_message(node *u, nodeinfo **list) {
-    int n = user_recv(u);
-    if (n <= 0) {
-        return n;
-    }
-
-    node *t = u->target.node;
-    t->source.node = u;
-    n = user_send(t, u->recvdata, u->recvdata_size);
-    if (n <= 0) {
-        return 1;
-    }
-
-    user_discard(u);
-    u->evaluate = user_participation;
-    t->source.node = NULL;
-    return 1;
+    return user_participation_relay_header(u, list, "NOTICE");
 }
 
 int user_participation_privmsg(node *u, nodeinfo **list) {
@@ -425,22 +426,26 @@ int user_participation_privmsg(node *u, nodeinfo **list) {
 }
 
 int user_participation_privmsg_relay_header(node *u, nodeinfo **list) {
+    return user_participation_relay_header(u, list, "PRIVMSG");
+}
+
+int user_participation_relay_header(node *u, nodeinfo **list, char *action) {
     node *t = u->target.node;
     if (t->source.node && t->source.node != u) {
         return 1;
     }
 
     t->source.node = u;
-    int n = user_sendf(t, ":%.*s PRIVMSG %.*s :", NICKLEN, u->nickname, NICKLEN, t->nickname);
+    int n = user_sendf(t, ":%.*s!%.*s@%.*s %s %.*s :", NICKLEN, u->nickname, action, USERLEN, u->username, HOSTLEN, u->hostname, NICKLEN, t->nickname);
     if (n <= 0) {
         return 1;
     }
 
-    u->evaluate = user_participation_privmsg_relay_message;
+    u->evaluate = user_participation_relay_message;
     return u->evaluate(u, list);
 }
 
-int user_participation_privmsg_relay_message(node *u, nodeinfo **list) {
+int user_participation_relay_message(node *u, nodeinfo **list) {
     int n = user_recv(u);
     if (n <= 0) {
         return n;
@@ -468,10 +473,10 @@ int user_participation_username(node *u, nodeinfo **list) {
 }
 
 int user_participation_welcome(node *u, nodeinfo **list) {
-    int n = user_sendf(u, ":%s 001 %.*s :Welcome to the Internet Relay Network %.*s!%.*s@%.*s\r\n", HOSTNAME, sizeof u->nickname, u->nickname,
-                                                                                                              sizeof u->nickname, u->nickname,
-                                                                                                              sizeof u->username, u->username,
-                                                                                                              sizeof u->hostname, u->hostname);
+    int n = user_sendf(u, ":%s 001 %.*s :Welcome to the Internet Relay Network %.*s!%.*s@%.*s\r\n", HOSTNAME, NICKLEN, u->nickname,
+                                                                                                              NICKLEN, u->nickname,
+                                                                                                              USERLEN, u->username,
+                                                                                                              HOSTLEN, u->hostname);
     if (n <= 0) {
         return n;
     }
@@ -562,8 +567,9 @@ int user_registration_username(node *u, nodeinfo **list) {
     memmove(u->username, u->recvdata, username_size);
     memset(u->username + username_size, 0, USERLEN - username_size);
 
-    /* XXX: Insert hostname logic here... */
-    strcpy(u->hostname, "WANKER");
+    struct sockaddr name;
+    assert(!sock_invalid(getpeername(u->fd, &name, (socklen_t[]) { sizeof name })));
+    assert(getnameinfo(&name, sizeof name, u->hostname, HOSTLEN, NULL, 0, NI_NUMERICHOST) == 0);
 
     u->evaluate = user_registration_discard_line;
     return u->evaluate(u, list);
